@@ -44,6 +44,13 @@ import JoinRide
 import GetUserRides
     from "./application/useCases/GetUserRides.js";
 
+import GetRideDetails
+    from "./application/useCases/GetRideDetails.js";    
+
+import GetDriverSummary
+    from "./application/useCases/GetDriverSummary.js";
+
+
 // Controllers
 import UserController
     from "./adapters/inbound/http/controllers/UserController.js";
@@ -57,6 +64,10 @@ import createUserRoutes
 
 import createRideRoutes
     from "./adapters/inbound/http/routes/rideRoutes.js";
+
+// Error - Handler
+import errorHandler
+    from "./adapters/inbound/http/errors/errorHandler.js";    
 
 
 const app = express();
@@ -75,7 +86,7 @@ app.use(express.json());
 // Outbound Adapters / Repositories
 // --------------------------------------------------
 
-// postgres
+// // postgres
 
 // const userRepository =
 //     new PostgreSQLUserRepository(pool);
@@ -96,7 +107,6 @@ const rideRepository =
 
 const bookingRepository =
     new MySQLBookingRepository(); 
-
 
 // --------------------------------------------------
 // Use Cases
@@ -120,13 +130,18 @@ const getRideById =
 const joinRide =
     new JoinRide(
         rideRepository,
-        userRepository,
-        bookingRepository
+        userRepository
+        // bookingRepository
     );
 
 const getUserRides =
     new GetUserRides(bookingRepository);
 
+const getRideDetails = 
+    new GetRideDetails(rideRepository);    
+
+const getDriverSummary =
+    new GetDriverSummary(userRepository);
 
 // --------------------------------------------------
 // Controllers
@@ -135,7 +150,8 @@ const getUserRides =
 const userController =
     new UserController(
         createUser,
-        getUserRides
+        getUserRides, 
+        getDriverSummary
     );
 
 const rideController =
@@ -143,7 +159,8 @@ const rideController =
         createRide,
         getRides,
         getRideById,
-        joinRide
+        joinRide, 
+        getRideDetails
     );
 
 
@@ -176,21 +193,12 @@ app.get("/", (req, res) => {
 // --------------------------------------------------
 // Error Handler
 // --------------------------------------------------
-
-app.use((error, req, res, next) => {
-
-    console.error(error);
-
-    res.status(400).json({
-        message: error.message
-    });
-});
+app.use(errorHandler); 
 
 
 // --------------------------------------------------
 // Start Server
 // --------------------------------------------------
-
 app.listen(PORT, () => {
     console.log(
         `Car Pool API running on http://localhost:${PORT}`

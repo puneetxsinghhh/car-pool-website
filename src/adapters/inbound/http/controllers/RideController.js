@@ -4,12 +4,14 @@ export default class RideController {
         createRide,
         getRides,
         getRideById,
-        joinRide
+        joinRide, 
+        getRideDetails
     ) {
         this.createRide = createRide;
         this.getRides = getRides;
         this.getRideById = getRideById;
         this.joinRide = joinRide;
+        this.getRideDetailsUseCase = getRideDetails;
     }
 
     async create(req, res, next) {
@@ -20,10 +22,11 @@ export default class RideController {
         } catch (error) {
             next(error);
         }
-    }
+    } 
 
     async getAll(req, res, next) {
         try {
+            debugger;
             const rides = await this.getRides.execute();
 
             res.status(200).json(rides);
@@ -44,6 +47,18 @@ export default class RideController {
         }
     }
 
+    async getRideDetails(req, res, next) {
+        try {
+            const rideId = Number(req.params.id);
+
+            const result = await this.getRideDetailsUseCase.execute(rideId);
+
+            res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    }     
+
     async join(req, res, next) {
         try {
             const booking = await this.joinRide.execute({
@@ -56,4 +71,5 @@ export default class RideController {
             next(error);
         }
     }
+   
 }

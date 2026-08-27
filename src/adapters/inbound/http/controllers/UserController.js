@@ -1,8 +1,9 @@
 export default class UserController {
 
-    constructor(createUser, getUserRides) {
+    constructor(createUser, getUserRides, getDriverSummary) {
         this.createUser = createUser;
         this.getUserRides = getUserRides;
+        this.getDriverSummaryUseCase = getDriverSummary;
     }
 
     async create(req, res, next) {
@@ -26,4 +27,33 @@ export default class UserController {
             next(error);
         }
     }
+
+    async getDriverSummary(req, res, next) {
+
+    try {
+
+        const driverId =
+            Number(req.params.id);
+
+        const summary =
+            await this.getDriverSummaryUseCase.execute(
+                driverId
+            );
+
+        if (!summary) {
+
+            return res.status(404).json({
+                message: "Driver not found"
+            });
+        }
+
+        res.status(200).json(summary);
+
+    } 
+    catch (error) {
+
+        next(error);
+     }
+    }
+
 }

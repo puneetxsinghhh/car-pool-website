@@ -20,5 +20,15 @@ export default function createRideRoutes(rideController) {
         rideController.join(req, res, next)
     );
 
+    router.get(
+    "/:id/details",
+    (req, res, next) =>
+        rideController.getRideDetails(req, res, next)
+    );
+
+    router.post("/:id/join", (req, res, next) =>
+    rideController.join(req, res, next)
+    );
+
     return router;
 }

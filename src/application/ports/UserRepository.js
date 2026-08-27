@@ -7,4 +7,10 @@ export default class UserRepository {
     async findById(id) {
         throw new Error("findById() must be implemented");
     }
+
+    async getDriverSummary(driverId) {
+    throw new Error(
+        "getDriverSummary() must be implemented"
+    );
+}
 }

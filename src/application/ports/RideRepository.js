@@ -15,5 +15,15 @@ export default class RideRepository {
     async update(ride) {
         throw new Error("update() must be implemented");
     }
+
+    async findRideDetailsById(id) {
+    throw new Error(
+        "findRideDetailsById() must be implemented");
+    }
+
+    // Port for the complete ride-booking operation
+    async joinRide(rideId, passengerId) {
+        throw new Error("joinRide() must be implemented");
+    }
     
 }
