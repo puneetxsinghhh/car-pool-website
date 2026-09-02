@@ -1,4 +1,5 @@
 import express from "express";
+import { clerkMiddleware } from "@clerk/express";
 
 // Database
 import pool from "./infrastructure/database/db.js";
@@ -74,12 +75,17 @@ const app = express();
 
 const PORT = 3000;
 
+// Clerk Middleware'
+app.use(clerkMiddleware());
+
 
 // --------------------------------------------------
 // Middleware
 // --------------------------------------------------
 
+
 app.use(express.json());
+
 
 
 // --------------------------------------------------

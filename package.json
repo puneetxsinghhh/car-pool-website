@@ -19,6 +19,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@clerk/express": "^2.1.64",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mysql2": "^3.24.1",
