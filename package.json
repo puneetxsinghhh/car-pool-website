@@ -20,10 +20,12 @@
   "type": "module",
   "dependencies": {
     "@clerk/express": "^2.1.64",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mysql2": "^3.24.1",
     "pg": "^8.23.0",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "svix": "^2.3.0"
   }
 }

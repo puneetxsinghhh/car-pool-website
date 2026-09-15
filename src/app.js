@@ -1,22 +1,12 @@
+import "dotenv/config";
 import express from "express";
 import { clerkMiddleware } from "@clerk/express";
+import cors from "cors";
 
-// Database
-import pool from "./infrastructure/database/db.js";
-import mysqlPool from "./infrastructure/database/mysqlDb.js";
+// --------------------------------------------------
+// Outbound Adapters / Repositories
+// --------------------------------------------------
 
-
-// PostgresSQL Outbound adapters
-import PostgreSQLUserRepository
-    from "./adapters/outbound/persistence/PostgreSQLUserRepository.js";
-
-import PostgreSQLRideRepository
-    from "./adapters/outbound/persistence/PostgreSQLRideRepository.js";
-
-import PostgreSQLBookingRepository
-    from "./adapters/outbound/persistence/PostgreSQLBookingRepository.js";
-
-// MySQL outbound adapters
 import MySQLUserRepository
     from "./adapters/outbound/persistence/MySQLUserRepository.js";
 
@@ -24,9 +14,12 @@ import MySQLRideRepository
     from "./adapters/outbound/persistence/MySQLRideRepository.js";
 
 import MySQLBookingRepository
-    from "./adapters/outbound/persistence/MySQLBookingRepository.js";    
+    from "./adapters/outbound/persistence/MySQLBookingRepository.js";
 
-// Use cases
+// --------------------------------------------------
+// Use Cases
+// --------------------------------------------------
+
 import CreateUser
     from "./application/useCases/CreateUser.js";
 
@@ -46,138 +39,220 @@ import GetUserRides
     from "./application/useCases/GetUserRides.js";
 
 import GetRideDetails
-    from "./application/useCases/GetRideDetails.js";    
+    from "./application/useCases/GetRideDetails.js";
 
 import GetDriverSummary
     from "./application/useCases/GetDriverSummary.js";
 
+import GetUserByClerkUserId
+    from "./application/useCases/GetUserByClerkUserId.js";
 
+import GetUserByEmail
+    from "./application/useCases/GetUserByEmail.js";
+
+import LinkClerkUserId
+    from "./application/useCases/LinkClerkUserId.js";
+
+// --------------------------------------------------
 // Controllers
+// --------------------------------------------------
+
 import UserController
     from "./adapters/inbound/http/controllers/UserController.js";
 
 import RideController
     from "./adapters/inbound/http/controllers/RideController.js";
 
+// --------------------------------------------------
 // Routes
+// --------------------------------------------------
+
 import createUserRoutes
     from "./adapters/inbound/http/routes/userRoutes.js";
 
 import createRideRoutes
     from "./adapters/inbound/http/routes/rideRoutes.js";
 
-// Error - Handler
-import errorHandler
-    from "./adapters/inbound/http/errors/errorHandler.js";    
+import createClerkWebhookRoutes
+    from "./adapters/inbound/http/routes/clerkWebhookRoutes.js";
 
+// --------------------------------------------------
+// Error Handler
+// --------------------------------------------------
+
+import errorHandler
+    from "./adapters/inbound/http/errors/errorHandler.js";
+
+
+// ==================================================
+// APP
+// ==================================================
 
 const app = express();
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
-// Clerk Middleware'
+
+// ==================================================
+// CORS
+// ==================================================
+
+app.use(
+    cors({
+        origin: "http://localhost:5173",
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+    })
+);
+
+
+// ==================================================
+// CLERK MIDDLEWARE
+// ==================================================
+
+// Adds Clerk authentication information to requests.
+//
+// IMPORTANT:
+// This does NOT automatically protect every route.
+// Routes such as the webhook can still remain public.
 app.use(clerkMiddleware());
 
 
-// --------------------------------------------------
-// Middleware
-// --------------------------------------------------
 
+// ==================================================
+// REPOSITORIES
+// ==================================================
+
+const userRepository = new MySQLUserRepository();
+
+const rideRepository = new MySQLRideRepository();
+
+const bookingRepository = new MySQLBookingRepository();
+
+
+// ==================================================
+// USE CASES
+// ==================================================
+
+// ---------- User Use Cases ----------
+
+const createUser = new CreateUser(userRepository);
+
+const getUserRides = new GetUserRides(
+    userRepository,
+    rideRepository
+);
+
+const getDriverSummary = new GetDriverSummary(
+    userRepository,
+    rideRepository
+);
+
+const getUserByClerkUserId =
+    new GetUserByClerkUserId(userRepository);
+
+const getUserByEmail =
+    new GetUserByEmail(userRepository);
+
+const linkClerkUserId =
+    new LinkClerkUserId(userRepository);
+
+
+// ---------- Ride Use Cases ----------
+
+const createRide = new CreateRide(
+    rideRepository,
+    userRepository
+);
+
+const getRides = new GetRides(
+    rideRepository
+);
+
+const getRideById = new GetRideById(
+    rideRepository
+);
+
+const joinRide = new JoinRide(
+    rideRepository,
+    bookingRepository
+);
+
+const getRideDetails = new GetRideDetails(
+    rideRepository
+);
+
+
+// ==================================================
+// CONTROLLERS
+// ==================================================
+
+const userController = new UserController(
+    createUser,
+    getUserRides,
+    getDriverSummary,
+    getUserByClerkUserId,
+    getUserByEmail,
+    linkClerkUserId
+);
+
+const rideController = new RideController(
+    createRide,
+    getRides,
+    getRideById,
+    joinRide,
+    getRideDetails
+);
+
+
+// ==================================================
+// CLERK WEBHOOK
+// ==================================================
+//
+// VERY IMPORTANT:
+//
+// express.raw() MUST be used for Clerk webhook.
+//
+// It must also come BEFORE express.json().
+//
+// Clerk's verifyWebhook() needs the original raw
+// request body to verify the webhook signature.
+//
+
+app.use(
+    "/api/webhooks",
+    express.raw({
+        type: "application/json"
+    }),
+    createClerkWebhookRoutes(userController)
+);
+
+
+// ==================================================
+// NORMAL JSON MIDDLEWARE
+// ==================================================
+//
+// All normal API requests can now use JSON.
+//
+// DO NOT move this above the webhook route.
+//
 
 app.use(express.json());
 
 
-
-// --------------------------------------------------
-// Outbound Adapters / Repositories
-// --------------------------------------------------
-
-// // postgres
-
-// const userRepository =
-//     new PostgreSQLUserRepository(pool);
-
-// const rideRepository =
-//     new PostgreSQLRideRepository(pool);
-
-// const bookingRepository =
-//     new PostgreSQLBookingRepository(pool);
-
-
-// sql   
-const userRepository =
-    new MySQLUserRepository();
-
-const rideRepository =
-    new MySQLRideRepository();
-
-const bookingRepository =
-    new MySQLBookingRepository(); 
-
-// --------------------------------------------------
-// Use Cases
-// --------------------------------------------------
-
-const createUser =
-    new CreateUser(userRepository);
-
-const createRide =
-    new CreateRide(
-        rideRepository,
-        userRepository
-    );
-
-const getRides =
-    new GetRides(rideRepository);
-
-const getRideById =
-    new GetRideById(rideRepository);
-
-const joinRide =
-    new JoinRide(
-        rideRepository,
-        userRepository
-        // bookingRepository
-    );
-
-const getUserRides =
-    new GetUserRides(bookingRepository);
-
-const getRideDetails = 
-    new GetRideDetails(rideRepository);    
-
-const getDriverSummary =
-    new GetDriverSummary(userRepository);
-
-// --------------------------------------------------
-// Controllers
-// --------------------------------------------------
-
-const userController =
-    new UserController(
-        createUser,
-        getUserRides, 
-        getDriverSummary
-    );
-
-const rideController =
-    new RideController(
-        createRide,
-        getRides,
-        getRideById,
-        joinRide, 
-        getRideDetails
-    );
-
-
-// --------------------------------------------------
-// Routes
-// --------------------------------------------------
+// ==================================================
+// USER ROUTES
+// ==================================================
 
 app.use(
     "/api/users",
     createUserRoutes(userController)
 );
+
+
+// ==================================================
+// RIDE ROUTES
+// ==================================================
 
 app.use(
     "/api/rides",
@@ -185,26 +260,32 @@ app.use(
 );
 
 
-// --------------------------------------------------
-// Health Check
-// --------------------------------------------------
+// ==================================================
+// HEALTH / TEST ROUTE
+// ==================================================
 
 app.get("/", (req, res) => {
     res.json({
+        success: true,
         message: "Car Pool API is running"
     });
 });
 
 
-// --------------------------------------------------
-// Error Handler
-// --------------------------------------------------
-app.use(errorHandler); 
+// ==================================================
+// ERROR HANDLER
+// ==================================================
+//
+// Must be registered AFTER all routes.
+//
+
+app.use(errorHandler);
 
 
-// --------------------------------------------------
-// Start Server
-// --------------------------------------------------
+// ==================================================
+// START SERVER
+// ==================================================
+
 app.listen(PORT, () => {
     console.log(
         `Car Pool API running on http://localhost:${PORT}`

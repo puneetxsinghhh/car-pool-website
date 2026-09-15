@@ -13,38 +13,145 @@ export default class MySQLUserRepository extends UserRepository {
 
     async create(user) {
 
-        const query = `
-            INSERT INTO users (name, email, role)
-            VALUES (?, ?, ?)
-        `;
+    console.log("🔥 MySQL create() called");
 
-        const values = [
-            user.name,
-            user.email,
-            user.role
-        ];
+    const [dbInfo] = await this.pool.query(
+        "SELECT DATABASE() AS databaseName"
+    );
 
-        const [result] = await this.pool.execute(query, values);
+    console.log(
+        "📌 Node is connected to:",
+        dbInfo[0].databaseName
+    );
 
-        return {
-            id: result.insertId,
-            name: user.name,
-            email: user.email,
-            role: user.role
-        };
-    }
+    const query = `
+        INSERT INTO users (clerk_user_id, name, email, role)
+        VALUES (?, ?, ?, ?)
+    `;
+
+    const values = [
+        user.clerkUserId,
+        user.name,
+        user.email,
+        user.role
+    ];
+
+    console.log("📦 INSERT values:", values);
+
+    const [result] = await this.pool.execute(query, values);
+
+    const [check] = await this.pool.execute(
+    "SELECT * FROM users WHERE id = ?",
+    [result.insertId]
+    );
+
+    console.log("🔍 INSERTED ROW:", check);
+
+    console.log("✅ INSERT successful. ID:", result.insertId);
+
+    return {
+        id: result.insertId,
+        clerkUserId: user.clerkUserId,
+        name: user.name,
+        email: user.email,
+        role: user.role
+    };
+}
 
     async findById(id) {
 
         const query = `
-            SELECT id, name, email, role
+            SELECT id, clerk_user_id, name, email, role
             FROM users
             WHERE id = ?
         `;
 
         const [rows] = await this.pool.execute(query, [id]);
 
-        return rows[0] || null;
+        if (rows.length === 0) {
+            return null;
+        }
+
+        const row = rows[0];
+
+        return {
+            id: row.id,
+            clerkUserId: row.clerk_user_id,
+            name: row.name,
+            email: row.email,
+            role: row.role
+        };
+    }
+
+    async findByClerkUserId(clerkUserId) {
+
+        const query = `
+            SELECT id, clerk_user_id, name, email, role
+            FROM users
+            WHERE clerk_user_id = ?
+        `;
+
+        const [rows] = await this.pool.execute(query, [clerkUserId]);
+
+        if (rows.length === 0) {
+            return null;
+        }
+
+        const row = rows[0];
+
+        return {
+            id: row.id,
+            clerkUserId: row.clerk_user_id,
+            name: row.name,
+            email: row.email,
+            role: row.role
+        };
+    }
+
+    async findByEmail(email) {
+
+        const query = `
+            SELECT id, clerk_user_id, name, email, role
+            FROM users
+            WHERE email = ?
+        `;
+
+        const [rows] = await this.pool.execute(query, [email]);
+
+        if (rows.length === 0) {
+            return null;
+        }
+
+        const row = rows[0];
+
+        return {
+            id: row.id,
+            clerkUserId: row.clerk_user_id,
+            name: row.name,
+            email: row.email,
+            role: row.role
+        };
+    }
+
+    async linkClerkUserId(userId, clerkUserId) {
+
+        const query = `
+            UPDATE users
+            SET clerk_user_id = ?
+            WHERE id = ?
+              AND clerk_user_id IS NULL
+        `;
+
+        const [result] = await this.pool.execute(query, [
+            clerkUserId,
+            userId
+        ]);
+
+        if (result.affectedRows === 0) {
+            throw new Error("User is already linked to a Clerk account");
+        }
+
+        return await this.findByClerkUserId(clerkUserId);
     }
 
     async findAll() {
@@ -118,6 +225,5 @@ export default class MySQLUserRepository extends UserRepository {
         availableSeats: Number(row.available_seats)
     };
     }
-
-
+    
 }

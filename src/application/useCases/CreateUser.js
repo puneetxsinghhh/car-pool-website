@@ -5,12 +5,13 @@ export default class CreateUser {
         this.userRepository = userRepository;
     }
 
-    async execute({ name, email, role }) {
+    async execute({ name, email, role, clerkUserId = null }) {
 
         const user = new User({
             name,
             email,
-            role
+            role,
+            clerkUserId
         });
 
         return await this.userRepository.create(user);

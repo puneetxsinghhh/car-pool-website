@@ -1,127 +1,163 @@
 # Car Pool API
 
-A Node.js and Express REST API for creating users, offering rides, and joining available rides. PostgreSQL is used for persistence.
+A Node.js and Express REST API for drivers to offer rides and passengers to join them. MySQL stores car-pool data; Clerk provides authentication.
+
+## Features
+
+- Create `DRIVER` and `PASSENGER` users.
+- Create, list, and inspect rides.
+- Join rides with seat and duplicate-booking protection.
+- View passenger bookings and driver summaries.
+- Link a Clerk account to a local MySQL user.
+- Protect APIs with a Clerk Bearer JWT.
+
+## Architecture
+
+```text
+HTTP Route -> Controller -> Use Case -> Repository Port -> MySQL Repository -> MySQL
+```
+
+```text
+src/
+  adapters/inbound/http/     Express routes, controllers, middleware
+  adapters/outbound/         MySQL and PostgreSQL repositories
+  application/useCases/      Business actions
+  application/ports/         Repository contracts
+  domain/entities/           User, Ride, Booking models
+  infrastructure/            Database and Clerk setup
+scripts/                     Local migration and Clerk test helpers
+```
 
 ## Requirements
 
-- Node.js
-- pnpm
-- PostgreSQL
+- Node.js 20+
+- MySQL 8+
+- Clerk development instance
 
-## Installation
+## Environment setup
 
-```bash
-pnpm install
-```
-
-Create a `.env` file in the project root:
+Create `.env` in the project root. Never commit or share its values.
 
 ```env
-DB_USER=your_postgres_user
-DB_HOST=localhost
-DB_NAME=your_database_name
-DB_PASSWORD=your_postgres_password
-DB_PORT=5432
+MYSQL_HOST=localhost
+MYSQL_USER=root
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_NAME=car_pool_db
+MYSQL_PORT=3306
+
+CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
 ```
 
-The PostgreSQL database must contain the `users`, `rides`, and booking tables expected by the repository queries.
+## Database model
+
+```text
+users
+  id               local numeric ID
+  clerk_user_id    unique Clerk user ID; null for unlinked old users
+  name
+  email            unique
+  role             DRIVER or PASSENGER
+
+rides
+  id, driver_id, origin, destination, total_seats, available_seats
+
+bookings
+  id, ride_id, passenger_id
+```
+
+Run the safe, repeatable migration if the Clerk column is missing:
+
+```bash
+node scripts/add-clerk-user-id.js
+```
 
 ## Run the API
 
-Development mode with automatic restart:
-
 ```bash
-pnpm dev
+node src/app.js
 ```
 
-Production-style start:
-
-```bash
-pnpm start
-```
-
-The API listens on `http://localhost:3000`.
-
-Note: the available development script is `pnpm dev`; `pnpm rundev` is not defined in `package.json`.
+The server listens at `http://localhost:3000`.
 
 ## Endpoints
 
-### Health check
+### Public
 
-```http
-GET /
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/` | Health check |
+| POST | `/api/users` | Create a local driver or passenger |
+| GET | `/api/users/:id/rides` | Get a passenger's bookings |
+| GET | `/api/users/:id/summary` | Get driver summary |
+| GET | `/api/rides` | List rides with free seats |
+| POST | `/api/rides` | Create a ride |
+| GET | `/api/rides/:id` | Get a ride |
+| GET | `/api/rides/:id/details` | Get ride details |
+| POST | `/api/rides/:id/join` | Join a ride |
+
+### Clerk-protected
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/users/auth/register` | Link a Clerk account to an existing/local MySQL user |
+| GET | `/api/users/me` | Get the local user linked to the JWT |
+
+## Clerk flow
+
+```text
+Clerk signup/sign-in
+  -> Clerk session JWT
+  -> Authorization: Bearer <JWT>
+  -> clerkMiddleware() validates token
+  -> requireClerkAuth checks authenticated user
+  -> req.clerkAuth.userId
+  -> users.clerk_user_id links Clerk identity to MySQL user
 ```
 
-### Users
+Clerk owns passwords, login, sessions, and JWT generation. This API never stores a password.
 
-Create a user:
+`DRIVER` and `PASSENGER` are car-pool roles, not authentication roles.
+
+## Postman Clerk test
+
+1. Create a local user using `POST /api/users`.
+2. Create a Clerk user with the same email in the Clerk Dashboard.
+3. For local testing only, generate a session JWT:
+
+```bash
+node scripts/create-clerk-token.js user_your_clerk_user_id
+```
+
+4. In Postman use **Authorization -> Bearer Token** and paste the JWT.
+5. Call:
 
 ```http
-POST /api/users
+POST /api/users/auth/register
 Content-Type: application/json
+Authorization: Bearer <JWT>
 ```
 
 ```json
 {
-  "name": "Puneet",
-  "email": "puneet@example.com",
+  "name": "Clerk Demo Driver",
+  "email": "clerk.driver.demo@example.com",
   "role": "DRIVER"
 }
 ```
 
-Get rides booked by a user:
+6. Verify with:
 
 ```http
-GET /api/users/:id/rides
+GET /api/users/me
+Authorization: Bearer <JWT>
 ```
 
-### Rides
+For a real frontend, Clerk's sign-in UI obtains the JWT. `create-clerk-token.js` is a development-only helper and must never be exposed as an HTTP endpoint.
 
-Create a ride. The `driverId` must belong to a user whose role is `DRIVER`:
+## Authentication vs authorization
 
-```http
-POST /api/rides
-Content-Type: application/json
+```text
+Authentication: Clerk verifies who sent the request.
+Authorization: this application checks what the local user can do.
 ```
-
-```json
-{
-  "driverId": 1,
-  "origin": "Delhi",
-  "destination": "Gurgaon",
-  "totalSeats": 3
-}
-```
-
-List available rides:
-
-```http
-GET /api/rides
-```
-
-Get a ride by ID:
-
-```http
-GET /api/rides/:id
-```
-
-Join a ride. The `passengerId` must belong to a user whose role is `PASSENGER`:
-
-```http
-POST /api/rides/:id/join
-Content-Type: application/json
-```
-
-```json
-{
-  "passengerId": 2
-}
-```
-
-## Project structure
-
-- `src/adapters/inbound/http`: Express controllers and routes
-- `src/application/useCases`: Application business operations
-- `src/domain/entities`: Domain entities
-- `src/adapters/outbound/persistence`: PostgreSQL repositories
-- `src/infrastructure/database`: Database connection setup

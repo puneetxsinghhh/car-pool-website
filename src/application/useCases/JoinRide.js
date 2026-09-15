@@ -8,7 +8,8 @@ export default class JoinRide {
         this.userRepository = userRepository;
     }
 
-    async execute(rideId, passengerId) {
+    // Matches the object supplied by RideController so IDs reach the domain logic correctly.
+    async execute({ rideId, passengerId }) {
 
         // 1. Verify passenger
         const passenger =
