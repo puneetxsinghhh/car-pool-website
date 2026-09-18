@@ -31,66 +31,94 @@ export default class UserController {
     // Clerk has already authenticated this request. This endpoint creates the
     // matching application profile in MySQL; it does not create a Clerk user.
     async registerAuthenticatedUser(req, res, next) {
-        console.log("registerAuthenticatedUser called with req.body:", req.body);
-        try {
-            const clerkUserId = req.clerkAuth.userId;
+    console.log("registerAuthenticatedUser called with req.body:", req.body);
 
-            const existingUser = await this.getUserByClerkUserId.execute(
+    try {
+        const clerkUserId = req.clerkAuth.userId;
+        const { role } = req.body;
+
+        // 1. Validate application role
+        if (!["DRIVER", "PASSENGER"].includes(role)) {
+            return res.status(400).json({
+                success: false,
+                message: "Role must be DRIVER or PASSENGER."
+            });
+        }
+
+        // 2. Check whether Clerk user is already linked
+        const existingUser = await this.getUserByClerkUserId.execute(
+            clerkUserId
+        );
+
+        if (existingUser) {
+            return res.status(200).json(existingUser);
+        }
+
+        // 3. Get user information from Clerk
+        const clerkUser = await clerkClient.users.getUser(clerkUserId);
+
+        const clerkEmail =
+            clerkUser.primaryEmailAddress?.emailAddress;
+
+        if (!clerkEmail) {
+            return res.status(400).json({
+                success: false,
+                message: "The Clerk account has no primary email address."
+            });
+        }
+
+        // 4. Store the role in Clerk publicMetadata
+        await clerkClient.users.updateUserMetadata(clerkUserId, {
+            publicMetadata: {
+                carPoolRole: role
+            }
+        });
+
+        // 5. Check whether an old MySQL user exists with this email
+        const localUser = await this.getUserByEmail.execute(clerkEmail);
+
+        if (localUser) {
+            if (localUser.clerkUserId) {
+                return res.status(409).json({
+                    success: false,
+                    message:
+                        "This local user is already linked to another Clerk account."
+                });
+            }
+
+            const linkedUser = await this.linkClerkUserId.execute(
+                localUser.id,
                 clerkUserId
             );
 
-            if (existingUser) {
-                return res.status(200).json(existingUser);
-            }
-
-            // The email comes from Clerk's Backend API, not from the client.
-            const clerkUser = await clerkClient.users.getUser(clerkUserId);
-            const clerkEmail = clerkUser.primaryEmailAddress?.emailAddress;
-
-            if (!clerkEmail) {
-                return res.status(400).json({
-                    success: false,
-                    message: "The Clerk account has no primary email address."
-                });
-            }
-
-            // This supports existing users created before Clerk was added.
-            const localUser = await this.getUserByEmail.execute(clerkEmail);
-
-            if (localUser) {
-                if (localUser.clerkUserId) {
-                    return res.status(409).json({
-                        success: false,
-                        message: "This local user is already linked to another Clerk account."
-                    });
-                }
-
-                const linkedUser = await this.linkClerkUserId.execute(
-                    localUser.id,
-                    clerkUserId
-                );
-
-                return res.status(200).json(linkedUser);
-            }
-
-            if (req.body.email.toLowerCase() !== clerkEmail.toLowerCase()) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Request email must match the authenticated Clerk email."
-                });
-            }
-
-            const user = await this.createUser.execute({
-                ...req.body,
-                email: clerkEmail,
-                clerkUserId
-            });
-
-            res.status(201).json(user);
-        } catch (error) {
-            next(error);
+            return res.status(200).json(linkedUser);
         }
+
+        // 6. Make sure request email matches Clerk email
+        if (
+            !req.body.email ||
+            req.body.email.toLowerCase() !== clerkEmail.toLowerCase()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Request email must match the authenticated Clerk email."
+            });
+        }
+
+        // 7. Create MySQL application user
+        const user = await this.createUser.execute({
+            ...req.body,
+            email: clerkEmail,
+            clerkUserId
+        });
+
+        res.status(201).json(user);
+
+    } catch (error) {
+        next(error);
     }
+}
 
     async getMe(req, res, next) {
         try {

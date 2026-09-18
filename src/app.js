@@ -15,6 +15,9 @@ import MySQLRideRepository
 
 import MySQLBookingRepository
     from "./adapters/outbound/persistence/MySQLBookingRepository.js";
+ 
+import MySQLOutboxRepository
+    from "./adapters/outbound/persistence/MySQLOutboxRepository.js";    
 
 // --------------------------------------------------
 // Use Cases
@@ -82,6 +85,12 @@ import createClerkWebhookRoutes
 
 import errorHandler
     from "./adapters/inbound/http/errors/errorHandler.js";
+    
+// =================================================
+// Services
+// =================================================
+import OutboxProcessor
+    from "./application/services/OutboxProcessor.js";
 
 
 // ==================================================
@@ -118,17 +127,20 @@ app.use(
 app.use(clerkMiddleware());
 
 
-
 // ==================================================
 // REPOSITORIES
 // ==================================================
 
 const userRepository = new MySQLUserRepository();
 
-const rideRepository = new MySQLRideRepository();
+const outboxRepository = new MySQLOutboxRepository();
+const outboxProcessor =
+    new OutboxProcessor(outboxRepository);
+
+const rideRepository =
+    new MySQLRideRepository(outboxRepository);
 
 const bookingRepository = new MySQLBookingRepository();
-
 
 // ==================================================
 // USE CASES
@@ -139,13 +151,11 @@ const bookingRepository = new MySQLBookingRepository();
 const createUser = new CreateUser(userRepository);
 
 const getUserRides = new GetUserRides(
-    userRepository,
-    rideRepository
+    bookingRepository
 );
 
 const getDriverSummary = new GetDriverSummary(
-    userRepository,
-    rideRepository
+    userRepository
 );
 
 const getUserByClerkUserId =
@@ -175,7 +185,7 @@ const getRideById = new GetRideById(
 
 const joinRide = new JoinRide(
     rideRepository,
-    bookingRepository
+    userRepository
 );
 
 const getRideDetails = new GetRideDetails(
@@ -280,6 +290,13 @@ app.get("/", (req, res) => {
 //
 
 app.use(errorHandler);
+
+// ==================================================
+// Outbox Processor
+
+setInterval(async () => {
+    await outboxProcessor.processPendingEvents();
+}, 5000);
 
 
 // ==================================================

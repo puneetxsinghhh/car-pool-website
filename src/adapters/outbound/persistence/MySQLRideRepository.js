@@ -6,16 +6,29 @@ import Ride from "../../../domain/entities/Ride.js";
 // Implements the RideRepository port using MySQL.
 export default class MySQLRideRepository extends RideRepository {
 
-    constructor() {
+    constructor(outboxRepository) {
         super();
 
-        this.pool = mysqlPool;
-    }
+    this.pool = mysqlPool;
+    this.outboxRepository = outboxRepository;
+}
 
     // Create a new ride in MySQL
     async create(ride) {
 
-        const query = `
+    const connection =
+        await this.pool.getConnection();
+
+    try {
+
+        // Start transaction
+        await connection.beginTransaction();
+
+        // -----------------------------------------
+        // 1. Create Ride
+        // -----------------------------------------
+
+        const rideQuery = `
             INSERT INTO rides (
                 driver_id,
                 origin,
@@ -26,7 +39,7 @@ export default class MySQLRideRepository extends RideRepository {
             VALUES (?, ?, ?, ?, ?)
         `;
 
-        const values = [
+        const rideValues = [
             ride.driverId,
             ride.origin,
             ride.destination,
@@ -34,17 +47,69 @@ export default class MySQLRideRepository extends RideRepository {
             ride.availableSeats
         ];
 
-        const [result] = await this.pool.execute(query, values);
+        const [result] =
+            await connection.execute(
+                rideQuery,
+                rideValues
+            );
+
+        const rideId = result.insertId;
+
+
+        // -----------------------------------------
+        // 2. Create Outbox Event
+        // -----------------------------------------
+
+        await this.outboxRepository.save(
+            connection,
+            {
+                eventType: "RIDE_CREATED",
+
+                payload: {
+                    rideId: rideId,
+                    driverId: ride.driverId,
+                    origin: ride.origin,
+                    destination: ride.destination,
+                    totalSeats: ride.totalSeats
+                }
+            }
+        );
+
+
+        // -----------------------------------------
+        // 3. Commit Transaction
+        // -----------------------------------------
+
+        await connection.commit();
+
+
+        // -----------------------------------------
+        // 4. Return Created Ride
+        // -----------------------------------------
 
         return {
-            id: result.insertId,
+            id: rideId,
             driverId: ride.driverId,
             origin: ride.origin,
             destination: ride.destination,
             totalSeats: ride.totalSeats,
             availableSeats: ride.availableSeats
         };
+
+
+    } catch (error) {
+
+        // Rollback both operations
+        await connection.rollback();
+
+        throw error;
+
+    } finally {
+
+        // Return connection to pool
+        connection.release();
     }
+}
 
     // Get all rides from MySQL
     async findAll() {

@@ -1,163 +1,90 @@
-# Car Pool API
+# 🚗 CarPool Application — Backend API
 
-A Node.js and Express REST API for drivers to offer rides and passengers to join them. MySQL stores car-pool data; Clerk provides authentication.
+A clean, modular REST API built with **Node.js**, **Express 5**, **MySQL**, and **Clerk Authentication**. It allows drivers to publish rides and passengers to discover and join them with atomic seat management.
 
-## Features
+---
 
-- Create `DRIVER` and `PASSENGER` users.
-- Create, list, and inspect rides.
-- Join rides with seat and duplicate-booking protection.
-- View passenger bookings and driver summaries.
-- Link a Clerk account to a local MySQL user.
-- Protect APIs with a Clerk Bearer JWT.
+## 📚 Essential Documentation Links
 
-## Architecture
+- [**Clerk Signup & Role Flow (`SIGNUP_FLOW.md`)**](./SIGNUP_FLOW.md): Detailed explanation of how user signup, tokens, and `DRIVER`/`PASSENGER` role assignment work across Clerk, Frontend, Express, and MySQL.
+- [**Complete Project Flow (`PROJECT_FLOW.md`)**](./PROJECT_FLOW.md): Architectural guide covering Hexagonal architecture, dependency injection, and all 6 core workflows.
 
-```text
-HTTP Route -> Controller -> Use Case -> Repository Port -> MySQL Repository -> MySQL
-```
+---
 
-```text
-src/
-  adapters/inbound/http/     Express routes, controllers, middleware
-  adapters/outbound/         MySQL and PostgreSQL repositories
-  application/useCases/      Business actions
-  application/ports/         Repository contracts
-  domain/entities/           User, Ride, Booking models
-  infrastructure/            Database and Clerk setup
-scripts/                     Local migration and Clerk test helpers
-```
+## 🎯 1. Project Purpose
 
-## Requirements
+The purpose of this project is to provide a reliable, scalable car-pooling backend service where:
+- Drivers can publish upcoming journeys with specified seat capacity.
+- Passengers can explore available rides, view driver and passenger details, and reserve seats.
+- Seat availability is updated atomically with database row-level locking (`FOR UPDATE`) to prevent race conditions or overbooking.
+- Authentication is handled securely via Clerk (credentials are never stored locally), while application authorization roles (`DRIVER` vs `PASSENGER`) are stored and verified in MySQL.
 
-- Node.js 20+
-- MySQL 8+
-- Clerk development instance
+---
 
-## Environment setup
+## 🛠️ 2. Technologies Used
 
-Create `.env` in the project root. Never commit or share its values.
+- **Runtime Environment:** Node.js (v20+)
+- **Web Framework:** Express.js (v5)
+- **Database:** MySQL 8+ (`mysql2/promise` with connection pooling)
+- **Authentication:** Clerk (`@clerk/express`, Clerk Backend SDK)
+- **Security & Utilities:** `dotenv`, `cors`, `svix`
+- **Architecture Pattern:** Clean / Hexagonal Architecture (Ports and Adapters)
 
+---
+
+## 🚀 3. Setup and Run Commands
+
+### Prerequisites
+- Node.js installed (`node -v`)
+- MySQL Server running locally on port `3306` with database `car_pool_db`
+
+### Environment Configuration
+Ensure `.env` exists in the `Car-Pool-Backend` directory:
 ```env
+# MySQL Database Configuration
 MYSQL_HOST=localhost
 MYSQL_USER=root
 MYSQL_PASSWORD=your_mysql_password
 MYSQL_NAME=car_pool_db
 MYSQL_PORT=3306
 
+# Clerk Authentication Keys
 CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
+
+# Server Port
+PORT=3000
 ```
 
-## Database model
-
-```text
-users
-  id               local numeric ID
-  clerk_user_id    unique Clerk user ID; null for unlinked old users
-  name
-  email            unique
-  role             DRIVER or PASSENGER
-
-rides
-  id, driver_id, origin, destination, total_seats, available_seats
-
-bookings
-  id, ride_id, passenger_id
-```
-
-Run the safe, repeatable migration if the Clerk column is missing:
-
+### Install Dependencies & Start Server
 ```bash
-node scripts/add-clerk-user-id.js
+cd Car-Pool-Backend
+npm install
+npm start
 ```
+> The server will start on: **`http://localhost:3000`**
 
-## Run the API
+---
 
-```bash
-node src/app.js
-```
+## 🔑 4. Authentication & Role Summary
 
-The server listens at `http://localhost:3000`.
+> **In this project, the role is chosen in the frontend onboarding modal (`RoleSelectionModal.jsx`), transmitted in `req.body.role` to `POST /api/users/auth/register`, stored in both Clerk metadata (`publicMetadata.carPoolRole`) and the MySQL database (`users.role`), and subsequently read from MySQL during ride operations (`CreateRide` and `JoinRide`).**
 
-## Endpoints
+---
 
-### Public
+## 📋 5. Core Endpoints Summary
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/` | Health check |
-| POST | `/api/users` | Create a local driver or passenger |
-| GET | `/api/users/:id/rides` | Get a passenger's bookings |
-| GET | `/api/users/:id/summary` | Get driver summary |
-| GET | `/api/rides` | List rides with free seats |
-| POST | `/api/rides` | Create a ride |
-| GET | `/api/rides/:id` | Get a ride |
-| GET | `/api/rides/:id/details` | Get ride details |
-| POST | `/api/rides/:id/join` | Join a ride |
+### Public Endpoints
+- `GET /`: API health check.
+- `GET /api/rides`: Lists all available rides with `available_seats > 0`.
+- `GET /api/rides/:id`: Returns basic info for a single ride.
+- `GET /api/rides/:id/details`: Returns ride info with driver contact and confirmed passenger list via SQL JOIN.
+- `POST /api/rides`: Creates a ride (enforces `driver.role === 'DRIVER'`).
+- `POST /api/rides/:id/join`: Concurrency-safe seat booking using row-level locking (`FOR UPDATE`).
+- `POST /api/users`: Creates a local user in MySQL directly without Clerk.
+- `GET /api/users/:id/rides`: Fetches rides booked by a passenger.
+- `GET /api/users/:id/summary`: Driver analytics aggregation (total rides, total passengers, total seats, remaining seats).
 
-### Clerk-protected
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| POST | `/api/users/auth/register` | Link a Clerk account to an existing/local MySQL user |
-| GET | `/api/users/me` | Get the local user linked to the JWT |
-
-## Clerk flow
-
-```text
-Clerk signup/sign-in
-  -> Clerk session JWT
-  -> Authorization: Bearer <JWT>
-  -> clerkMiddleware() validates token
-  -> requireClerkAuth checks authenticated user
-  -> req.clerkAuth.userId
-  -> users.clerk_user_id links Clerk identity to MySQL user
-```
-
-Clerk owns passwords, login, sessions, and JWT generation. This API never stores a password.
-
-`DRIVER` and `PASSENGER` are car-pool roles, not authentication roles.
-
-## Postman Clerk test
-
-1. Create a local user using `POST /api/users`.
-2. Create a Clerk user with the same email in the Clerk Dashboard.
-3. For local testing only, generate a session JWT:
-
-```bash
-node scripts/create-clerk-token.js user_your_clerk_user_id
-```
-
-4. In Postman use **Authorization -> Bearer Token** and paste the JWT.
-5. Call:
-
-```http
-POST /api/users/auth/register
-Content-Type: application/json
-Authorization: Bearer <JWT>
-```
-
-```json
-{
-  "name": "Clerk Demo Driver",
-  "email": "clerk.driver.demo@example.com",
-  "role": "DRIVER"
-}
-```
-
-6. Verify with:
-
-```http
-GET /api/users/me
-Authorization: Bearer <JWT>
-```
-
-For a real frontend, Clerk's sign-in UI obtains the JWT. `create-clerk-token.js` is a development-only helper and must never be exposed as an HTTP endpoint.
-
-## Authentication vs authorization
-
-```text
-Authentication: Clerk verifies who sent the request.
-Authorization: this application checks what the local user can do.
-```
+### Protected Endpoints (`Authorization: Bearer <Clerk_Token>`)
+- `GET /api/users/me`: Returns local MySQL profile for the authenticated Clerk user (returns 404 if not yet registered in MySQL).
+- `POST /api/users/auth/register`: Links Clerk user ID to a new MySQL profile with the selected role.
